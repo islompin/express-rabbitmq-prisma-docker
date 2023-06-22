@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    container_name: rabbitmq-express
+    ports: 
+      - 8080:8080
+    volumes:
+      - express-data:/var/lib/server
+    env_file: .env
+    depends_on: 
+      - rabbitmq
+      - db
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: nodejs-rabbitmq
+    hostname: localhost
+    environment:
+      RABBIT_NAME: username
+      RABBIT_PASSWORD: password
+    ports: 
+      - "5672:5672"
+      - "15672:15672"
+    volumes: 
+      - rabbitmq-data:/var/lib/rabbitmq
+  db:
+    image: postgres
+    environment:
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DATABASE: postgres
+    ports: 
+      - 5432:5432
+    volumes: 
+      - db-data:/var/lib/postgresql/data
+volumes: 
+  rabbitmq-data:
+  express-data:
+  db-data:
+
