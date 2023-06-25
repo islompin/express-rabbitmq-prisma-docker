@@ -2,8 +2,8 @@ import { Request, Response } from 'express';
 import { hashed } from '../utils/hashed';
 import { sign } from '../utils/jwt';
 import { compare } from '../utils/compare';
-import createMQProducer from '../producer';
 import { PrismaClient } from '@prisma/client';
+import { RabbitMQConfig } from '../config';
 
 const prisma = new PrismaClient()
 
@@ -21,19 +21,30 @@ const SignUp = async (req: Request, res: Response) => {
     let { username, email, password } = req.body
     password = await hashed(password);
 
-    const AMQP_URL = "amqp://localhost"
-    const QUEUE_NAME = "eventqueue"
-
-
     const msg = {
         action: 'REGISTER',
         data: { username, email, password },
     }
-    createMQProducer(AMQP_URL, QUEUE_NAME, JSON.stringify(msg))
 
+    const queue = "eventqueue"
+    const producerConfig = new RabbitMQConfig();
+    await producerConfig.connect()
 
+    await producerConfig.createQueue(queue, { durable: true })
+    await producerConfig.publishToQueue(queue, JSON.stringify(msg))
+    await producerConfig.close()
 
+    const foundUser = await prisma.user.findUnique({
+        where: { email }
+    })
 
+    if(foundUser){
+        res.json({
+            status: 401,
+            message: "email already exists",
+        })
+    }
+    
     const user = await prisma.user.create({
         data: {
             username, password, email
@@ -44,7 +55,7 @@ const SignUp = async (req: Request, res: Response) => {
         status: 201,
         message: "user created",
         data: user,
-        token:sign({id:user.id})
+        token: sign({ id: user.id })
     })
 }
 
@@ -57,16 +68,19 @@ const SignIn = async (req: Request, res: Response) => {
         })
         if (foundUser) {
             if (await compare(password, foundUser.password) == true) {
-                const AMQP_URL = "amqp://localhost"
-                const QUEUE_NAME = "eventqueue"
+
+                const queue = "eventqueue"
+                const producerConfig = new RabbitMQConfig();
+                await producerConfig.connect()
 
                 const msg = {
                     action: 'LOGIN',
                     data: { email, password },
                 }
 
-                createMQProducer(AMQP_URL, QUEUE_NAME, JSON.stringify(msg))
-
+                await producerConfig.createQueue(queue, { durable: true })
+                await producerConfig.publishToQueue(queue, JSON.stringify(msg))
+                await producerConfig.close()
 
                 return res.json({
                     status: 200,
